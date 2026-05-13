@@ -1,9 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
-  createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
-  signInWithEmailAndPassword,
+  signInAnonymously,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   collection,
@@ -60,8 +59,6 @@ let view = {
   collectionVisibleCount: COLLECTION_PAGE_SIZE,
   formPhotos: [],
   formDraft: null,
-  authMode: "login",
-  authError: "",
 };
 
 render();
@@ -101,7 +98,6 @@ function render() {
 
 function screenMarkup() {
   if (view.screen === "loading") return loadingScreen();
-  if (view.screen === "auth") return authScreen();
   if (view.screen === "setup") return setupScreen();
   if (view.screen === "pin") return pinScreen();
   if (view.screen === "user") return userSelectScreen();
@@ -119,32 +115,6 @@ function loadingScreen() {
         <h1 class="brand-title">우리의 추억</h1>
         <p class="brand-subtitle">둘만의 공간을 불러오는 중이에요</p>
       </div>
-    </section>
-  `;
-}
-
-function authScreen() {
-  const isSignup = view.authMode === "signup";
-  return `
-    <section class="screen screen-soft">
-      <div class="brand-block">
-        <div class="brand-mark">♡</div>
-        <h1 class="brand-title">우리의 추억</h1>
-        <p class="brand-subtitle">${isSignup ? "둘만의 계정을 처음 만들어요" : "이메일로 먼저 들어와 주세요"}</p>
-      </div>
-      <form class="form-stack" id="auth-form">
-        <div class="field-group">
-          <label for="auth-email">이메일</label>
-          <input class="ds-field" id="auth-email" name="email" type="email" autocomplete="email" required />
-        </div>
-        <div class="field-group">
-          <label for="auth-password">비밀번호</label>
-          <input class="ds-field" id="auth-password" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" minlength="6" required />
-        </div>
-        <p class="error-text" id="auth-error">${escapeHtml(view.authError)}</p>
-        <button class="ds-button-primary" type="submit">${isSignup ? "회원가입" : "로그인"}</button>
-        <button class="ds-button-secondary" type="button" id="auth-mode-toggle">${isSignup ? "이미 계정이 있어요" : "처음이라면 회원가입"}</button>
-      </form>
     </section>
   `;
 }
@@ -482,15 +452,6 @@ function photoManagerMarkup() {
 }
 
 function bindScreen() {
-  const authForm = document.querySelector("#auth-form");
-  if (authForm) authForm.addEventListener("submit", handleAuthSubmit);
-
-  document.querySelector("#auth-mode-toggle")?.addEventListener("click", () => {
-    view.authMode = view.authMode === "login" ? "signup" : "login";
-    view.authError = "";
-    render();
-  });
-
   const setupForm = document.querySelector("#setup-form");
   if (setupForm) setupForm.addEventListener("submit", handleSetup);
 
@@ -636,14 +597,7 @@ function renderCollectionResults() {
 function initializeAuthState() {
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      state = loadState();
-      view = {
-        ...view,
-        screen: "auth",
-        currentUser: "",
-        authError: "",
-      };
-      render();
+      await signInAnonymously(auth);
       return;
     }
 
@@ -651,32 +605,12 @@ function initializeAuthState() {
       await loadRemoteState();
       view.currentUser = state.currentUser || "";
       view.screen = needsSetup() ? "setup" : "pin";
-      view.authError = "";
     } catch (error) {
-      view.screen = "auth";
-      view.authError = firebaseErrorMessage(error);
+      view.screen = needsSetup() ? "setup" : "pin";
+      console.error(error);
     }
     render();
   });
-}
-
-async function handleAuthSubmit(event) {
-  event.preventDefault();
-  const data = new FormData(event.currentTarget);
-  const email = String(data.get("email")).trim();
-  const password = String(data.get("password"));
-  view.authError = "";
-
-  try {
-    if (view.authMode === "signup") {
-      await createUserWithEmailAndPassword(auth, email, password);
-    } else {
-      await signInWithEmailAndPassword(auth, email, password);
-    }
-  } catch (error) {
-    view.authError = firebaseErrorMessage(error);
-    render();
-  }
 }
 
 async function loadRemoteState() {
@@ -1238,18 +1172,6 @@ function sanitizeAnniversary(anniversary) {
 
 function safeStorageName(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-function firebaseErrorMessage(error) {
-  const code = error?.code || "";
-  if (code.includes("email-already-in-use")) return "이미 가입된 이메일이에요";
-  if (code.includes("invalid-email")) return "이메일 형식을 확인해 주세요";
-  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
-    return "이메일 또는 비밀번호가 맞지 않아요";
-  }
-  if (code.includes("weak-password")) return "비밀번호는 6자리 이상으로 입력해 주세요";
-  if (code.includes("permission-denied")) return "로그인한 사용자만 사용할 수 있어요";
-  return "잠시 후 다시 시도해 주세요";
 }
 
 function parseDate(dateKey) {
