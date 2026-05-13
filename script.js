@@ -9,9 +9,11 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  getDocs,
   getFirestore,
+  onSnapshot,
+  query,
   setDoc,
+  where,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getDownloadURL,
@@ -23,6 +25,7 @@ import {
 const STORAGE_KEY = "coupleDiaryAppState.v1";
 const COLLECTION_PAGE_SIZE = 5;
 const COUPLE_SPACE_ID = "shared";
+const COUPLE_ID = "our-couple-diary";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC3M54V8_bUX48UNHKqSIQEscIsIaQRWMM",
@@ -37,6 +40,8 @@ const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const storage = getStorage(firebaseApp);
+let unsubscribeMemories = null;
+let unsubscribeAnniversaries = null;
 
 const memoryTypes = ["데이트", "여행", "기념일", "맛집", "선물", "일상", "사진", "편지", "싸움/화해", "특별한 날"];
 const emotions = ["행복", "설렘", "고마움", "감동", "편안함", "그리움", "웃김", "미안함", "서운함", "화해"];
@@ -60,6 +65,7 @@ let view = {
   collectionVisibleCount: COLLECTION_PAGE_SIZE,
   formPhotos: [],
   formDraft: null,
+  errorMessage: "",
 };
 
 render();
@@ -69,7 +75,7 @@ function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
-      return JSON.parse(saved);
+      return sanitizeCachedState(JSON.parse(saved));
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -83,6 +89,17 @@ function loadState() {
   };
 }
 
+function sanitizeCachedState(cached) {
+  return {
+    settings: cached?.settings || null,
+    currentUser: cached?.currentUser || "",
+    memories: Array.isArray(cached?.memories)
+      ? cached.memories.map((memory) => ({ ...memory, photos: firestorePhotos(memory.photos) }))
+      : [],
+    anniversaries: Array.isArray(cached?.anniversaries) ? cached.anniversaries : [],
+  };
+}
+
 function saveState() {
   state.currentUser = view.currentUser;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -93,8 +110,12 @@ function needsSetup() {
 }
 
 function render() {
-  app.innerHTML = `<div class="phone-frame">${screenMarkup()}</div>`;
+  app.innerHTML = `<div class="phone-frame">${errorBanner()}${screenMarkup()}</div>`;
   bindScreen();
+}
+
+function errorBanner() {
+  return view.errorMessage ? `<p class="error-text app-error">${escapeHtml(view.errorMessage)}</p>` : "";
 }
 
 function screenMarkup() {
@@ -583,7 +604,9 @@ function renderCollectionResults() {
 function initializeAuthState() {
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      signInAnonymously(auth).catch(console.error);
+      signInAnonymously(auth).catch((error) => {
+        handleSyncError("Firebase sign-in failed. Please try again.", error);
+      });
       return;
     }
 
@@ -595,7 +618,7 @@ function initializeAuthState() {
         view.screen = needsSetup() ? "setup" : "pin";
       }
     } catch (error) {
-      console.error(error);
+      handleSyncError("Shared data could not be loaded. Please try again.", error);
     }
     render();
   });
@@ -603,11 +626,7 @@ function initializeAuthState() {
 
 async function loadRemoteState() {
   const cachedCurrentUser = loadState().currentUser || "";
-  const [settingsSnap, memoriesSnap, anniversariesSnap] = await Promise.all([
-    getDoc(doc(db, "settings", COUPLE_SPACE_ID)),
-    getDocs(collection(db, "memories")),
-    getDocs(collection(db, "anniversaries")),
-  ]);
+  const settingsSnap = await getDoc(doc(db, "settings", COUPLE_SPACE_ID));
   const settings = settingsSnap.exists() ? settingsSnap.data() : null;
   const users = settings?.users || [];
   const currentUser = users.some((user) => user.nickname === cachedCurrentUser) ? cachedCurrentUser : "";
@@ -615,13 +634,52 @@ async function loadRemoteState() {
   state = {
     settings,
     currentUser,
-    memories: memoriesSnap.docs.map((item) => ({ id: item.id, ...item.data() })),
-    anniversaries: anniversariesSnap.docs.map((item) => ({ id: item.id, ...item.data() })),
+    memories: [],
+    anniversaries: [],
   };
 
-  state.memories = state.memories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  state.anniversaries = state.anniversaries.sort((a, b) => new Date(a.date) - new Date(b.date));
   saveState();
+  startRealtimeSubscriptions();
+}
+
+function startRealtimeSubscriptions() {
+  if (!unsubscribeMemories) {
+    const memoriesQuery = query(collection(db, "memories"), where("coupleId", "==", COUPLE_ID));
+    unsubscribeMemories = onSnapshot(
+      memoriesQuery,
+      (snapshot) => {
+        console.log("real-time memory update received");
+        state.memories = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data(), photos: firestorePhotos(item.data().photos) }))
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        clearSyncError();
+        saveState();
+        renderRealtimeUpdate();
+      },
+      (error) => {
+        handleSyncError("Memories could not be loaded. Please try again.", error);
+      },
+    );
+  }
+
+  if (!unsubscribeAnniversaries) {
+    const anniversariesQuery = query(collection(db, "anniversaries"), where("coupleId", "==", COUPLE_ID));
+    unsubscribeAnniversaries = onSnapshot(
+      anniversariesQuery,
+      (snapshot) => {
+        console.log("real-time anniversaries update received");
+        state.anniversaries = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+        clearSyncError();
+        saveState();
+        renderRealtimeUpdate();
+      },
+      (error) => {
+        handleSyncError("Anniversaries could not be loaded. Please try again.", error);
+      },
+    );
+  }
 }
 
 async function saveSettingsToFirestore() {
@@ -679,7 +737,7 @@ async function handleSetup(event) {
     relationshipStartDate: data.get("startDate"),
   };
   enterMain(me);
-  saveSettingsToFirestore().catch(console.error);
+  trackFirestoreWrite(saveSettingsToFirestore(), "Settings could not be saved. Please try again.");
 }
 
 function handlePin(event) {
@@ -699,7 +757,7 @@ function handleMemorySubmit(event) {
   const now = new Date().toISOString();
   const memoryId = view.editingMemoryId || makeId("memory");
   const sourcePhotos = normalizePhotos(view.formPhotos);
-  const photos = sourcePhotos.map(storedPhotoPayload);
+  const photos = firestorePhotos(sourcePhotos);
 
   const payload = {
     title: String(data.get("title")).trim(),
@@ -710,14 +768,23 @@ function handleMemorySubmit(event) {
     content: String(data.get("content")).trim(),
     photos,
     authorNickname: view.currentUser,
+    coupleId: COUPLE_ID,
     updatedAt: now,
   };
 
   if (view.editingMemoryId) {
     const index = state.memories.findIndex((memory) => memory.id === view.editingMemoryId);
-    state.memories[index] = { ...state.memories[index], ...payload };
-    view.viewingMemoryId = view.editingMemoryId;
-    syncMemoryToFirestore(state.memories[index].id, sourcePhotos);
+    const memory = {
+      ...(index >= 0 ? state.memories[index] : { id: memoryId, createdAt: now }),
+      ...payload,
+    };
+    if (index >= 0) {
+      state.memories[index] = memory;
+    } else {
+      state.memories.unshift(memory);
+    }
+    view.viewingMemoryId = memory.id;
+    syncMemoryToFirestore(memory, sourcePhotos);
   } else {
     const memory = {
       id: memoryId,
@@ -726,7 +793,7 @@ function handleMemorySubmit(event) {
     };
     state.memories.unshift(memory);
     view.viewingMemoryId = memory.id;
-    syncMemoryToFirestore(memory.id, sourcePhotos);
+    syncMemoryToFirestore(memory, sourcePhotos);
   }
 
   view.selectedDate = payload.date;
@@ -797,7 +864,7 @@ function confirmDeleteMemory() {
     view.formDraft = null;
     saveState();
     render();
-    deleteMemoryFromFirestore(memoryId).catch(console.error);
+    trackFirestoreWrite(deleteMemoryFromFirestore(memoryId), "Memory could not be deleted. Please try again.");
   });
 }
 
@@ -847,6 +914,7 @@ function openAnniversaryDialog(id = null) {
       title: String(data.get("title")).trim(),
       date: data.get("date"),
       memo: String(data.get("memo")).trim(),
+      coupleId: COUPLE_ID,
     };
     let savedAnniversary = item;
     if (item) {
@@ -860,7 +928,7 @@ function openAnniversaryDialog(id = null) {
     closeDialog();
     saveState();
     render();
-    saveAnniversaryToFirestore(savedAnniversary).catch(console.error);
+    trackFirestoreWrite(saveAnniversaryToFirestore(savedAnniversary), "Anniversary could not be saved. Please try again.");
   });
 }
 
@@ -904,7 +972,7 @@ function confirmDeleteAnniversary(id) {
     deleteAnniversary(id);
     saveState();
     render();
-    deleteAnniversaryFromFirestore(id).catch(console.error);
+    trackFirestoreWrite(deleteAnniversaryFromFirestore(id), "Anniversary could not be deleted. Please try again.");
   });
 }
 
@@ -1106,6 +1174,19 @@ function normalizePhotos(photos = []) {
   }));
 }
 
+function firestorePhotos(photos = []) {
+  return normalizePhotos(photos)
+    .filter((photo) => isFirestorePhotoUrl(photo.url))
+    .map((photo, index) => ({
+      id: photo.id || `photo_${index + 1}`,
+      ...storedPhotoPayload(photo),
+    }));
+}
+
+function isFirestorePhotoUrl(url) {
+  return typeof url === "string" && url.startsWith("https://");
+}
+
 async function uploadMemoryPhotos(memoryId, photos = []) {
   const normalized = normalizePhotos(photos);
   const uploaded = [];
@@ -1117,37 +1198,42 @@ async function uploadMemoryPhotos(memoryId, photos = []) {
       const photoRef = ref(storage, path);
       await uploadBytes(photoRef, photo.file);
       const url = await getDownloadURL(photoRef);
+      console.log("successful photo upload");
       uploaded.push(storedPhotoPayload({ ...photo, url, storagePath: path }));
     } else {
       uploaded.push(storedPhotoPayload(photo));
     }
   }
 
-  return normalizePhotos(uploaded);
+  return firestorePhotos(uploaded);
 }
 
-function syncMemoryToFirestore(memoryId, sourcePhotos) {
-  uploadMemoryPhotos(memoryId, sourcePhotos)
+function syncMemoryToFirestore(memory, sourcePhotos) {
+  uploadMemoryPhotos(memory.id, sourcePhotos)
     .then((uploadedPhotos) => {
-      const memory = state.memories.find((item) => item.id === memoryId);
-      if (!memory) return;
-
-      memory.photos = uploadedPhotos;
+      const savedMemory = { ...memory, photos: uploadedPhotos };
+      const index = state.memories.findIndex((item) => item.id === memory.id);
+      if (index >= 0) state.memories[index] = savedMemory;
       saveState();
-      return saveMemoryToFirestore(memory);
+      console.log("saved photo URLs", uploadedPhotos.map((photo) => photo.url));
+      return saveMemoryToFirestore(savedMemory);
     })
-    .catch(console.error);
+    .then(logMemorySaveSuccess)
+    .catch((error) => {
+      handleSyncError("Memory photos or Firestore save failed. Please try again.", error);
+    });
 }
 
 function sanitizeMemory(memory) {
   return {
+    coupleId: COUPLE_ID,
     title: memory.title || "",
     date: memory.date || "",
     place: memory.place || "",
     type: memory.type || "",
     emotion: memory.emotion || "",
     content: memory.content || "",
-    photos: normalizePhotos(memory.photos).map(storedPhotoPayload),
+    photos: firestorePhotos(memory.photos),
     authorNickname: memory.authorNickname || "",
     createdAt: memory.createdAt || new Date().toISOString(),
     updatedAt: memory.updatedAt || new Date().toISOString(),
@@ -1156,6 +1242,7 @@ function sanitizeMemory(memory) {
 
 function sanitizeAnniversary(anniversary) {
   return {
+    coupleId: COUPLE_ID,
     title: anniversary.title || "",
     date: anniversary.date || "",
     memo: anniversary.memo || "",
@@ -1165,12 +1252,43 @@ function sanitizeAnniversary(anniversary) {
 
 function storedPhotoPayload(photo) {
   return {
-    id: photo.id,
     url: photo.url,
-    storagePath: photo.storagePath || "",
     order: photo.order,
     isCover: photo.isCover,
   };
+}
+
+function renderRealtimeUpdate() {
+  if (view.screen === "setup" || view.screen === "pin" || view.screen === "form") return;
+  render();
+}
+
+function trackFirestoreWrite(promise, errorMessage) {
+  promise.then(logFirestoreSaveSuccess).catch((error) => handleSyncError(errorMessage, error));
+}
+
+function logFirestoreSaveSuccess() {
+  console.log("Firestore save success");
+  clearSyncError();
+}
+
+function logMemorySaveSuccess() {
+  console.log("Firestore memory saved");
+  clearSyncError();
+}
+
+function handleSyncError(message, error) {
+  showSyncError(message);
+  console.error(error);
+}
+
+function showSyncError(message) {
+  view.errorMessage = message;
+  render();
+}
+
+function clearSyncError() {
+  view.errorMessage = "";
 }
 
 function safeStorageName(value) {

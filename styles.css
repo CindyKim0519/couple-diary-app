@@ -151,6 +151,12 @@ button {
   text-align: center;
 }
 
+.app-error {
+  background: var(--surface-paper);
+  margin: 0;
+  padding: var(--space-3) var(--space-5) 0;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
