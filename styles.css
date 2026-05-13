@@ -397,20 +397,23 @@ button {
   padding: var(--space-3);
 }
 
-.anniversary-actions {
-  display: flex;
-  gap: var(--space-1);
-  margin-left: auto;
-}
-
-.text-button {
-  background: transparent;
-  border: 0;
+.anniversary-menu-button {
+  align-items: center;
+  background: var(--surface-paper);
+  border: 1px solid rgba(117, 164, 95, 0.22);
+  border-radius: var(--radius-pill);
   color: var(--color-sage-700);
   cursor: pointer;
-  font-size: var(--font-size-xs);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 20px;
   font-weight: 800;
+  height: 40px;
+  justify-content: center;
+  line-height: 1;
+  margin-left: auto;
   padding: 0;
+  width: 40px;
 }
 
 .memory-card {
@@ -709,6 +712,21 @@ button {
 .dialog h2 {
   font-size: var(--font-size-lg);
   margin: 0 0 var(--space-2);
+}
+
+.dialog-action-stack {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.dialog-action-stack button {
+  width: 100%;
+}
+
+.danger-button {
+  border-color: var(--color-error);
+  color: var(--color-error);
 }
 
 .hidden {

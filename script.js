@@ -423,11 +423,8 @@ function bindScreen() {
   });
 
   document.querySelector("#add-anniversary")?.addEventListener("click", () => openAnniversaryDialog());
-  document.querySelectorAll("[data-edit-anniversary]").forEach((button) => {
-    button.addEventListener("click", () => openAnniversaryDialog(button.dataset.editAnniversary));
-  });
-  document.querySelectorAll("[data-delete-anniversary]").forEach((button) => {
-    button.addEventListener("click", () => deleteAnniversary(button.dataset.deleteAnniversary));
+  document.querySelectorAll("[data-anniversary-menu]").forEach((button) => {
+    button.addEventListener("click", () => openAnniversaryActions(button.dataset.anniversaryMenu));
   });
 
   document.querySelector("#memory-search")?.addEventListener("input", (event) => {
@@ -692,8 +689,45 @@ function openAnniversaryDialog(id = null) {
 
 function deleteAnniversary(id) {
   state.anniversaries = state.anniversaries.filter((item) => item.id !== id);
-  saveState();
-  render();
+}
+
+function openAnniversaryActions(id) {
+  const item = state.anniversaries.find((anniversary) => anniversary.id === id);
+  if (!item) return;
+
+  openDialog(`
+    <h2>${escapeHtml(item.title)}</h2>
+    <div class="dialog-action-stack">
+      <button class="ds-button-secondary" id="anniversary-edit">수정</button>
+      <button class="ds-button-secondary danger-button" id="anniversary-delete">삭제</button>
+      <button class="ds-button-primary" id="dialog-cancel">취소</button>
+    </div>
+  `);
+  document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
+  document.querySelector("#anniversary-edit").addEventListener("click", () => {
+    closeDialog();
+    openAnniversaryDialog(id);
+  });
+  document.querySelector("#anniversary-delete").addEventListener("click", () => confirmDeleteAnniversary(id));
+}
+
+function confirmDeleteAnniversary(id) {
+  closeDialog();
+  openDialog(`
+    <h2>이 기념일을 삭제할까요?</h2>
+    <p class="helper-text">삭제하면 다시 복구할 수 없어요.</p>
+    <div class="button-row" style="margin-top: var(--space-5)">
+      <button class="ds-button-secondary" id="dialog-cancel">취소</button>
+      <button class="ds-button-primary" id="dialog-delete">삭제</button>
+    </div>
+  `);
+  document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
+  document.querySelector("#dialog-delete").addEventListener("click", () => {
+    closeDialog();
+    deleteAnniversary(id);
+    saveState();
+    render();
+  });
 }
 
 function openDialog(markup) {
@@ -793,7 +827,7 @@ function anniversaryMarkup(item) {
         <strong>${escapeHtml(item.title)}</strong>
         ${item.memo ? `<p class="memory-preview">${escapeHtml(item.memo)}</p>` : ""}
       </div>
-      ${item.automatic ? "" : `<div class="anniversary-actions"><button class="text-button" data-edit-anniversary="${item.id}">수정</button><button class="text-button" data-delete-anniversary="${item.id}">삭제</button></div>`}
+      ${item.automatic ? "" : `<button class="anniversary-menu-button" data-anniversary-menu="${item.id}" aria-label="${escapeAttr(item.title)} 기념일 메뉴">⋯</button>`}
     </div>
   `;
 }
