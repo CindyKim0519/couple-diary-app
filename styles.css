@@ -494,7 +494,28 @@ button {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: 1fr 136px;
+  margin-bottom: var(--space-3);
+}
+
+.collection-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
   margin-bottom: var(--space-4);
+}
+
+.collection-actions .meta-text {
+  font-weight: 800;
+}
+
+.collection-actions .ds-button-primary {
+  min-width: 96px;
+}
+
+.load-more-button {
+  margin-top: var(--space-4);
+  width: 100%;
 }
 
 .chip-grid {
@@ -673,6 +694,17 @@ button {
   display: none !important;
 }
 
+.sr-only {
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 @media (max-width: 420px) {
   .app-shell {
     padding: 0;
@@ -701,5 +733,10 @@ button {
 
   .bottom-actions .button-row {
     width: 100%;
+  }
+
+  .collection-actions {
+    align-items: center;
+    flex-direction: row;
   }
 }

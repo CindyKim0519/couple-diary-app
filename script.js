@@ -1,4 +1,5 @@
 const STORAGE_KEY = "coupleDiaryAppState.v1";
+const COLLECTION_PAGE_SIZE = 5;
 
 const memoryTypes = ["데이트", "여행", "기념일", "맛집", "선물", "일상", "사진", "편지", "싸움/화해", "특별한 날"];
 const emotions = ["행복", "설렘", "고마움", "감동", "편안함", "그리움", "웃김", "미안함", "서운함", "화해"];
@@ -17,9 +18,9 @@ let view = {
   viewingMemoryId: null,
   search: "",
   typeFilter: "전체",
+  collectionVisibleCount: COLLECTION_PAGE_SIZE,
   formPhotos: [],
   formDraft: null,
-  anniversaryEditingId: null,
 };
 
 render();
@@ -207,26 +208,29 @@ function calendarView() {
 
 function collectionView() {
   const memories = filteredMemories();
+  const visibleMemories = memories.slice(0, view.collectionVisibleCount);
+  const hasMore = visibleMemories.length < memories.length;
   const countText = resultCountText(memories.length);
   return `
     <section class="section-panel">
       <div class="search-row">
         <div class="field-group">
-          <label for="memory-search">검색</label>
+          <label class="sr-only" for="memory-search">검색</label>
           <input class="ds-field" id="memory-search" value="${escapeAttr(view.search)}" placeholder="제목, 장소, 본문, 감정을 찾아봐요" />
         </div>
         <div class="field-group">
-          <label for="type-filter">기록 유형</label>
+          <label class="sr-only" for="type-filter">기록 유형</label>
           <select class="ds-field select-field" id="type-filter">
             ${["전체", ...memoryTypes].map((type) => `<option ${view.typeFilter === type ? "selected" : ""}>${type}</option>`).join("")}
           </select>
         </div>
       </div>
-      <div class="memory-list">${memories.length ? memories.map(memoryCard).join("") : emptySearchText()}</div>
-      <div class="bottom-actions">
+      <div class="collection-actions">
         <p class="meta-text">${countText}</p>
-        <div class="button-row"><button class="ds-button-primary" id="add-memory">추억 추가</button></div>
+        <button class="ds-button-primary" id="add-memory">추억 추가</button>
       </div>
+      <div class="memory-list">${visibleMemories.length ? visibleMemories.map(memoryCard).join("") : emptySearchText()}</div>
+      ${hasMore ? `<button class="ds-button-secondary load-more-button" id="load-more-memories">더보기</button>` : ""}
     </section>
   `;
 }
@@ -433,10 +437,16 @@ function bindScreen() {
 
   document.querySelector("#memory-search")?.addEventListener("input", (event) => {
     view.search = event.target.value;
+    resetCollectionVisibleCount();
     render();
   });
   document.querySelector("#type-filter")?.addEventListener("change", (event) => {
     view.typeFilter = event.target.value;
+    resetCollectionVisibleCount();
+    render();
+  });
+  document.querySelector("#load-more-memories")?.addEventListener("click", () => {
+    view.collectionVisibleCount += COLLECTION_PAGE_SIZE;
     render();
   });
 
@@ -812,6 +822,10 @@ function filteredMemories() {
         .includes(query);
     })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function resetCollectionVisibleCount() {
+  view.collectionVisibleCount = COLLECTION_PAGE_SIZE;
 }
 
 function memoryCard(memory) {
