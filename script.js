@@ -676,8 +676,8 @@ async function handleSetup(event) {
     ],
     relationshipStartDate: data.get("startDate"),
   };
-  await saveSettingsToFirestore();
   enterMain(me);
+  saveSettingsToFirestore().catch(console.error);
 }
 
 function handlePin(event) {
