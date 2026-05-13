@@ -611,11 +611,10 @@ function initializeAuthState() {
       return;
     }
 
-    const currentScreen = view.screen;
     try {
       await loadRemoteState();
-      view.currentUser = state.currentUser || "";
-      if (currentScreen === "setup" || currentScreen === "pin") {
+      if (!view.currentUser) view.currentUser = state.currentUser || "";
+      if (view.screen === "setup" || view.screen === "pin") {
         view.screen = needsSetup() ? "setup" : "pin";
       }
     } catch (error) {
@@ -684,22 +683,27 @@ function startRealtimeSubscriptions() {
 }
 
 async function saveSettingsToFirestore() {
+  await ensureAuthenticatedUser();
   await setDoc(doc(db, "settings", COUPLE_SPACE_ID), state.settings);
 }
 
 async function saveMemoryToFirestore(memory) {
+  await ensureAuthenticatedUser();
   await setDoc(doc(db, "memories", memory.id), sanitizeMemory(memory));
 }
 
 async function deleteMemoryFromFirestore(memoryId) {
+  await ensureAuthenticatedUser();
   await deleteDoc(doc(db, "memories", memoryId));
 }
 
 async function saveAnniversaryToFirestore(anniversary) {
+  await ensureAuthenticatedUser();
   await setDoc(doc(db, "anniversaries", anniversary.id), sanitizeAnniversary(anniversary));
 }
 
 async function deleteAnniversaryFromFirestore(anniversaryId) {
+  await ensureAuthenticatedUser();
   await deleteDoc(doc(db, "anniversaries", anniversaryId));
 }
 
@@ -754,6 +758,12 @@ function handlePin(event) {
 
 function handleMemorySubmit(event) {
   event.preventDefault();
+  if (!view.currentUser) {
+    showSyncError("현재 사용자를 먼저 선택해 주세요.");
+    view.screen = "user";
+    render();
+    return;
+  }
   const data = new FormData(event.currentTarget);
   const now = new Date().toISOString();
   const memoryId = view.editingMemoryId || makeId("memory");
