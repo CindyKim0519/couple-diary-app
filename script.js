@@ -46,7 +46,7 @@ const app = document.querySelector("#app");
 
 let state = loadState();
 let view = {
-  screen: "loading",
+  screen: needsSetup() ? "setup" : "pin",
   activeTab: "calendar",
   currentUser: state.currentUser || "",
   selectedDate: toDateKey(new Date()),
@@ -97,7 +97,6 @@ function render() {
 }
 
 function screenMarkup() {
-  if (view.screen === "loading") return loadingScreen();
   if (view.screen === "setup") return setupScreen();
   if (view.screen === "pin") return pinScreen();
   if (view.screen === "user") return userSelectScreen();
@@ -105,18 +104,6 @@ function screenMarkup() {
   if (view.screen === "detail") return detailScreen();
   if (view.screen === "gallery") return galleryScreen();
   return mainScreen();
-}
-
-function loadingScreen() {
-  return `
-    <section class="screen screen-soft">
-      <div class="brand-block">
-        <div class="brand-mark">♡</div>
-        <h1 class="brand-title">우리의 추억</h1>
-        <p class="brand-subtitle">둘만의 공간을 불러오는 중이에요</p>
-      </div>
-    </section>
-  `;
 }
 
 function setupScreen() {
@@ -597,16 +584,18 @@ function renderCollectionResults() {
 function initializeAuthState() {
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      await signInAnonymously(auth);
+      signInAnonymously(auth).catch(console.error);
       return;
     }
 
+    const currentScreen = view.screen;
     try {
       await loadRemoteState();
       view.currentUser = state.currentUser || "";
-      view.screen = needsSetup() ? "setup" : "pin";
+      if (currentScreen === "setup" || currentScreen === "pin") {
+        view.screen = needsSetup() ? "setup" : "pin";
+      }
     } catch (error) {
-      view.screen = needsSetup() ? "setup" : "pin";
       console.error(error);
     }
     render();
@@ -615,9 +604,11 @@ function initializeAuthState() {
 
 async function loadRemoteState() {
   const cachedCurrentUser = loadState().currentUser || "";
-  const settingsSnap = await getDoc(doc(db, "settings", COUPLE_SPACE_ID));
-  const memoriesSnap = await getDocs(collection(db, "memories"));
-  const anniversariesSnap = await getDocs(collection(db, "anniversaries"));
+  const [settingsSnap, memoriesSnap, anniversariesSnap] = await Promise.all([
+    getDoc(doc(db, "settings", COUPLE_SPACE_ID)),
+    getDocs(collection(db, "memories")),
+    getDocs(collection(db, "anniversaries")),
+  ]);
   const settings = settingsSnap.exists() ? settingsSnap.data() : null;
   const users = settings?.users || [];
   const currentUser = users.some((user) => user.nickname === cachedCurrentUser) ? cachedCurrentUser : "";
@@ -1119,21 +1110,9 @@ async function uploadMemoryPhotos(memoryId, photos = []) {
       const photoRef = ref(storage, path);
       await uploadBytes(photoRef, photo.file);
       const url = await getDownloadURL(photoRef);
-      uploaded.push({
-        id: photo.id,
-        url,
-        storagePath: path,
-        order: photo.order,
-        isCover: photo.isCover,
-      });
+      uploaded.push(storedPhotoPayload({ ...photo, url, storagePath: path }));
     } else {
-      uploaded.push({
-        id: photo.id,
-        url: photo.url,
-        storagePath: photo.storagePath || "",
-        order: photo.order,
-        isCover: photo.isCover,
-      });
+      uploaded.push(storedPhotoPayload(photo));
     }
   }
 
@@ -1148,13 +1127,7 @@ function sanitizeMemory(memory) {
     type: memory.type || "",
     emotion: memory.emotion || "",
     content: memory.content || "",
-    photos: normalizePhotos(memory.photos).map((photo) => ({
-      id: photo.id,
-      url: photo.url,
-      storagePath: photo.storagePath || "",
-      order: photo.order,
-      isCover: photo.isCover,
-    })),
+    photos: normalizePhotos(memory.photos).map(storedPhotoPayload),
     authorNickname: memory.authorNickname || "",
     createdAt: memory.createdAt || new Date().toISOString(),
     updatedAt: memory.updatedAt || new Date().toISOString(),
@@ -1167,6 +1140,16 @@ function sanitizeAnniversary(anniversary) {
     date: anniversary.date || "",
     memo: anniversary.memo || "",
     createdAt: anniversary.createdAt || new Date().toISOString(),
+  };
+}
+
+function storedPhotoPayload(photo) {
+  return {
+    id: photo.id,
+    url: photo.url,
+    storagePath: photo.storagePath || "",
+    order: photo.order,
+    isCover: photo.isCover,
   };
 }
 
