@@ -447,10 +447,7 @@ function bindScreen() {
 
   document.querySelectorAll(".user-select-button").forEach((button) => {
     button.addEventListener("click", () => {
-      view.currentUser = button.dataset.user;
-      view.screen = "main";
-      saveState();
-      render();
+      enterMain(button.dataset.user);
     });
   });
 
@@ -645,6 +642,14 @@ async function deleteAnniversaryFromFirestore(anniversaryId) {
   await deleteDoc(doc(db, "anniversaries", anniversaryId));
 }
 
+function enterMain(user) {
+  view.currentUser = user;
+  view.activeTab = "calendar";
+  view.screen = "main";
+  saveState();
+  render();
+}
+
 async function handleSetup(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
@@ -671,11 +676,8 @@ async function handleSetup(event) {
     ],
     relationshipStartDate: data.get("startDate"),
   };
-  view.currentUser = me;
-  view.screen = "main";
   await saveSettingsToFirestore();
-  saveState();
-  render();
+  enterMain(me);
 }
 
 function handlePin(event) {
