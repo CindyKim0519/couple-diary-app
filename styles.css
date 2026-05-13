@@ -518,10 +518,14 @@ button {
 }
 
 .search-row {
+  margin-bottom: var(--space-3);
+}
+
+.filter-row {
   display: grid;
   gap: var(--space-3);
-  grid-template-columns: 1fr 136px;
-  margin-bottom: var(--space-3);
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: var(--space-4);
 }
 
 .collection-actions {
@@ -760,7 +764,6 @@ button {
     max-height: 100vh;
   }
 
-  .search-row,
   .field-grid {
     grid-template-columns: 1fr;
   }

@@ -18,6 +18,7 @@ let view = {
   viewingMemoryId: null,
   search: "",
   typeFilter: "전체",
+  authorFilter: "전체",
   collectionVisibleCount: COLLECTION_PAGE_SIZE,
   formPhotos: [],
   formDraft: null,
@@ -207,10 +208,7 @@ function calendarView() {
 }
 
 function collectionView() {
-  const memories = filteredMemories();
-  const visibleMemories = memories.slice(0, view.collectionVisibleCount);
-  const hasMore = visibleMemories.length < memories.length;
-  const countText = resultCountText(memories.length);
+  const result = collectionResultState();
   return `
     <section class="section-panel">
       <div class="search-row">
@@ -218,21 +216,51 @@ function collectionView() {
           <label class="sr-only" for="memory-search">검색</label>
           <input class="ds-field" id="memory-search" value="${escapeAttr(view.search)}" placeholder="제목, 장소, 본문, 감정을 찾아봐요" />
         </div>
+      </div>
+      <div class="filter-row">
         <div class="field-group">
-          <label class="sr-only" for="type-filter">기록 유형</label>
+          <label for="type-filter">기록 유형</label>
           <select class="ds-field select-field" id="type-filter">
             ${["전체", ...memoryTypes].map((type) => `<option ${view.typeFilter === type ? "selected" : ""}>${type}</option>`).join("")}
           </select>
         </div>
+        <div class="field-group">
+          <label for="author-filter">작성자</label>
+          <select class="ds-field select-field" id="author-filter">
+            ${authorFilterOptions()}
+          </select>
+        </div>
       </div>
       <div class="collection-actions">
-        <p class="meta-text">${countText}</p>
+        <p class="meta-text" id="collection-count">${result.countText}</p>
         <button class="ds-button-primary" id="add-memory">추억 추가</button>
       </div>
-      <div class="memory-list">${visibleMemories.length ? visibleMemories.map(memoryCard).join("") : emptySearchText()}</div>
-      ${hasMore ? `<button class="ds-button-secondary load-more-button" id="load-more-memories">더보기</button>` : ""}
+      <div id="collection-results">${collectionResultsMarkup(result)}</div>
     </section>
   `;
+}
+
+function collectionResultsMarkup(result) {
+  return `
+    <div class="memory-list">${result.visibleMemories.length ? result.visibleMemories.map(memoryCard).join("") : emptySearchText()}</div>
+    ${result.hasMore ? `<button class="ds-button-secondary load-more-button" id="load-more-memories">더보기</button>` : ""}
+  `;
+}
+
+function collectionResultState() {
+  const memories = filteredMemories();
+  const visibleMemories = memories.slice(0, view.collectionVisibleCount);
+  return {
+    countText: resultCountText(memories.length),
+    hasMore: visibleMemories.length < memories.length,
+    visibleMemories,
+  };
+}
+
+function authorFilterOptions() {
+  return ["전체", ...state.settings.users.map((user) => user.nickname)]
+    .map((author) => `<option ${view.authorFilter === author ? "selected" : ""}>${escapeHtml(author)}</option>`)
+    .join("");
 }
 
 function memoryFormScreen() {
@@ -406,13 +434,7 @@ function bindScreen() {
     });
   });
 
-  document.querySelectorAll(".memory-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      view.viewingMemoryId = card.dataset.memoryId;
-      view.screen = "detail";
-      render();
-    });
-  });
+  bindMemoryCards();
 
   document.querySelector("#add-memory")?.addEventListener("click", () => {
     view.editingMemoryId = null;
@@ -430,17 +452,19 @@ function bindScreen() {
   document.querySelector("#memory-search")?.addEventListener("input", (event) => {
     view.search = event.target.value;
     resetCollectionVisibleCount();
-    render();
+    renderCollectionResults();
   });
   document.querySelector("#type-filter")?.addEventListener("change", (event) => {
     view.typeFilter = event.target.value;
     resetCollectionVisibleCount();
-    render();
+    renderCollectionResults();
   });
-  document.querySelector("#load-more-memories")?.addEventListener("click", () => {
-    view.collectionVisibleCount += COLLECTION_PAGE_SIZE;
-    render();
+  document.querySelector("#author-filter")?.addEventListener("change", (event) => {
+    view.authorFilter = event.target.value;
+    resetCollectionVisibleCount();
+    renderCollectionResults();
   });
+  bindLoadMoreButton();
 
   document.querySelector("#back-main")?.addEventListener("click", () => {
     view.screen = "main";
@@ -483,6 +507,36 @@ function bindScreen() {
     view.screen = "detail";
     render();
   });
+}
+
+function bindMemoryCards() {
+  document.querySelectorAll(".memory-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      view.viewingMemoryId = card.dataset.memoryId;
+      view.screen = "detail";
+      render();
+    });
+  });
+}
+
+function bindLoadMoreButton() {
+  document.querySelector("#load-more-memories")?.addEventListener("click", () => {
+    view.collectionVisibleCount += COLLECTION_PAGE_SIZE;
+    renderCollectionResults();
+  });
+}
+
+function renderCollectionResults() {
+  const result = collectionResultState();
+  const count = document.querySelector("#collection-count");
+  const results = document.querySelector("#collection-results");
+
+  if (count) count.textContent = result.countText;
+  if (!results) return;
+
+  results.innerHTML = collectionResultsMarkup(result);
+  bindMemoryCards();
+  bindLoadMoreButton();
 }
 
 function handleSetup(event) {
@@ -611,7 +665,7 @@ function confirmDeleteMemory() {
     <p class="helper-text">삭제하면 다시 복구할 수 없어요.</p>
     <div class="button-row" style="margin-top: var(--space-5)">
       <button class="ds-button-secondary" id="dialog-cancel">취소</button>
-      <button class="ds-button-primary" id="dialog-delete">삭제</button>
+      <button class="ds-button-secondary danger-button" id="dialog-delete">삭제</button>
     </div>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
@@ -842,6 +896,7 @@ function filteredMemories() {
   const query = view.search.trim().toLowerCase();
   return state.memories
     .filter((memory) => view.typeFilter === "전체" || memory.type === view.typeFilter)
+    .filter((memory) => view.authorFilter === "전체" || memory.authorNickname === view.authorFilter)
     .filter((memory) => {
       if (!query) return true;
       return [memory.title, memory.place, memory.content, memory.type, memory.emotion]
@@ -861,7 +916,7 @@ function memoryCard(memory) {
   const badge = userBadge(memory.authorNickname);
   return `
     <article class="memory-card" data-memory-id="${memory.id}">
-      <div class="memory-cover">${cover ? `<img src="${cover.url}" alt="${escapeAttr(memory.title)}" />` : "꽃"}</div>
+      <div class="memory-cover">${cover ? `<img src="${cover.url}" alt="${escapeAttr(memory.title)}" />` : "기록"}</div>
       <div class="memory-copy">
         <div class="memory-card-head">
           <h3>${escapeHtml(memory.title)}</h3>
@@ -883,6 +938,8 @@ function userBadge(nickname) {
 
 function resultCountText(count) {
   if (view.search.trim()) return `검색 결과 ${count}개`;
+  if (view.authorFilter !== "전체" && view.typeFilter !== "전체") return `${view.authorFilter}의 ${view.typeFilter} 추억 ${count}개`;
+  if (view.authorFilter !== "전체") return `${view.authorFilter} 추억 ${count}개`;
   if (view.typeFilter !== "전체") return `${view.typeFilter} 추억 ${count}개`;
   return `총 추억 ${count}개`;
 }
