@@ -53,6 +53,7 @@ let view = {
   viewedMonth: monthKey(new Date()),
   editingMemoryId: null,
   viewingMemoryId: null,
+  memoryReturnTab: "calendar",
   search: "",
   typeFilter: "전체",
   authorFilter: "전체",
@@ -552,6 +553,7 @@ function bindMemoryCards() {
   document.querySelectorAll(".memory-card").forEach((card) => {
     card.addEventListener("click", () => {
       view.viewingMemoryId = card.dataset.memoryId;
+      view.memoryReturnTab = view.activeTab;
       view.screen = "detail";
       render();
     });
@@ -786,10 +788,11 @@ function confirmDeleteMemory() {
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
   document.querySelector("#dialog-delete").addEventListener("click", () => {
     const memoryId = view.editingMemoryId;
+    const returnTab = view.memoryReturnTab || "calendar";
     state.memories = state.memories.filter((memory) => memory.id !== view.editingMemoryId);
     closeDialog();
     view.screen = "main";
-    view.activeTab = "calendar";
+    view.activeTab = returnTab;
     view.formPhotos = [];
     view.formDraft = null;
     saveState();

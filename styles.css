@@ -472,10 +472,24 @@ button {
 
 .memory-card h3 {
   color: var(--text-primary);
+  flex: 1;
   font-size: var(--font-size-md);
   line-height: var(--line-height-md);
   margin: 0;
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-card .author-badge {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  max-width: 64px;
+  min-height: 28px;
+  overflow: hidden;
+  padding: 0 var(--space-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
