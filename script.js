@@ -691,12 +691,13 @@ function handlePin(event) {
   render();
 }
 
-async function handleMemorySubmit(event) {
+function handleMemorySubmit(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
   const now = new Date().toISOString();
   const memoryId = view.editingMemoryId || makeId("memory");
-  const photos = await uploadMemoryPhotos(memoryId, view.formPhotos);
+  const sourcePhotos = normalizePhotos(view.formPhotos);
+  const photos = sourcePhotos.map(storedPhotoPayload);
 
   const payload = {
     title: String(data.get("title")).trim(),
@@ -714,7 +715,7 @@ async function handleMemorySubmit(event) {
     const index = state.memories.findIndex((memory) => memory.id === view.editingMemoryId);
     state.memories[index] = { ...state.memories[index], ...payload };
     view.viewingMemoryId = view.editingMemoryId;
-    await saveMemoryToFirestore(state.memories[index]);
+    syncMemoryToFirestore(state.memories[index].id, sourcePhotos);
   } else {
     const memory = {
       id: memoryId,
@@ -723,7 +724,7 @@ async function handleMemorySubmit(event) {
     };
     state.memories.unshift(memory);
     view.viewingMemoryId = memory.id;
-    await saveMemoryToFirestore(memory);
+    syncMemoryToFirestore(memory.id, sourcePhotos);
   }
 
   view.selectedDate = payload.date;
@@ -783,9 +784,9 @@ function confirmDeleteMemory() {
     </div>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
-  document.querySelector("#dialog-delete").addEventListener("click", async () => {
+  document.querySelector("#dialog-delete").addEventListener("click", () => {
+    const memoryId = view.editingMemoryId;
     state.memories = state.memories.filter((memory) => memory.id !== view.editingMemoryId);
-    await deleteMemoryFromFirestore(view.editingMemoryId);
     closeDialog();
     view.screen = "main";
     view.activeTab = "calendar";
@@ -793,6 +794,7 @@ function confirmDeleteMemory() {
     view.formDraft = null;
     saveState();
     render();
+    deleteMemoryFromFirestore(memoryId).catch(console.error);
   });
 }
 
@@ -835,7 +837,7 @@ function openAnniversaryDialog(id = null) {
     </form>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
-  document.querySelector("#anniversary-form").addEventListener("submit", async (event) => {
+  document.querySelector("#anniversary-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const payload = {
@@ -850,12 +852,12 @@ function openAnniversaryDialog(id = null) {
       savedAnniversary = { id: makeId("anniversary"), ...payload, createdAt: new Date().toISOString() };
       state.anniversaries.push(savedAnniversary);
     }
-    await saveAnniversaryToFirestore(savedAnniversary);
     view.selectedDate = payload.date;
     view.viewedMonth = monthKey(parseDate(payload.date));
     closeDialog();
     saveState();
     render();
+    saveAnniversaryToFirestore(savedAnniversary).catch(console.error);
   });
 }
 
@@ -894,12 +896,12 @@ function confirmDeleteAnniversary(id) {
     </div>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
-  document.querySelector("#dialog-delete").addEventListener("click", async () => {
+  document.querySelector("#dialog-delete").addEventListener("click", () => {
     closeDialog();
     deleteAnniversary(id);
-    await deleteAnniversaryFromFirestore(id);
     saveState();
     render();
+    deleteAnniversaryFromFirestore(id).catch(console.error);
   });
 }
 
@@ -1119,6 +1121,19 @@ async function uploadMemoryPhotos(memoryId, photos = []) {
   }
 
   return normalizePhotos(uploaded);
+}
+
+function syncMemoryToFirestore(memoryId, sourcePhotos) {
+  uploadMemoryPhotos(memoryId, sourcePhotos)
+    .then((uploadedPhotos) => {
+      const memory = state.memories.find((item) => item.id === memoryId);
+      if (!memory) return;
+
+      memory.photos = uploadedPhotos;
+      saveState();
+      return saveMemoryToFirestore(memory);
+    })
+    .catch(console.error);
 }
 
 function sanitizeMemory(memory) {
