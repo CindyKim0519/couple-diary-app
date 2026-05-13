@@ -172,6 +172,8 @@ button {
   font-size: 22px;
   height: 42px;
   justify-content: center;
+  line-height: 1;
+  padding: 0;
   width: 42px;
 }
 
@@ -184,10 +186,13 @@ button {
 }
 
 .topbar h1 {
+  align-items: center;
   color: var(--text-primary);
+  display: flex;
   font-size: var(--font-size-lg);
   line-height: var(--line-height-lg);
   margin: 0;
+  min-height: 42px;
 }
 
 .user-pill,
@@ -465,9 +470,9 @@ button {
 .memory-preview {
   color: var(--text-muted);
   display: -webkit-box;
-  overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .bottom-actions {

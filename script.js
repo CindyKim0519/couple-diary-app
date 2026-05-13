@@ -309,6 +309,7 @@ function detailScreen() {
   }
   const cover = coverPhoto(memory);
   const canEdit = memory.authorNickname === view.currentUser;
+  const metaText = detailMetaText(memory);
 
   return `
     <section class="screen screen-soft screen-scroll">
@@ -321,8 +322,7 @@ function detailScreen() {
         ${cover ? `<div class="detail-photo" id="open-gallery"><img src="${cover.url}" alt="${escapeAttr(memory.title)}" /></div>` : ""}
         <h2 class="detail-title">${escapeHtml(memory.title)}</h2>
         <p class="helper-text">${escapeHtml(memory.authorNickname)}가 남긴 기록</p>
-        <p class="meta-text">${formatKoreanDate(memory.date)}${memory.place ? ` / ${escapeHtml(memory.place)}` : ""}</p>
-        <p class="meta-text">${escapeHtml(memory.type)} / ${escapeHtml(memory.emotion)}</p>
+        <p class="meta-text">${escapeHtml(metaText)}</p>
         <div class="detail-content">${escapeHtml(memory.content || "오늘의 작은 순간을 남겨두었어요.")}</div>
         ${canEdit ? `<div class="button-row" style="margin-top: var(--space-5)"><button class="ds-button-primary" id="edit-memory">수정</button></div>` : ""}
       </article>
@@ -826,10 +826,13 @@ function memoryCard(memory) {
           <span class="author-badge ${badge}">${escapeHtml(memory.authorNickname)}</span>
         </div>
         <p class="memory-meta">${formatDotDate(memory.date)} · ${escapeHtml(memory.type)} · ${escapeHtml(memory.emotion)}</p>
-        ${memory.content ? `<p class="memory-preview">${escapeHtml(memory.content)}</p>` : ""}
       </div>
     </article>
   `;
+}
+
+function detailMetaText(memory) {
+  return [formatKoreanDate(memory.date), memory.place, memory.type, memory.emotion].filter(Boolean).join(" · ");
 }
 
 function userBadge(nickname) {
