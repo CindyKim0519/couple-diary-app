@@ -348,14 +348,9 @@ function galleryScreen() {
 function photoManagerMarkup() {
   const tiles = view.formPhotos.map((photo, index) => `
     <div class="photo-tile">
-      <img src="${photo.url}" alt="추억 사진 ${index + 1}" />
-      ${photo.isCover ? `<span class="cover-label">대표</span>` : ""}
-      <div class="photo-tools">
-        <button type="button" data-photo-action="left" data-photo-id="${photo.id}" aria-label="왼쪽으로">‹</button>
-        <button type="button" data-photo-action="cover" data-photo-id="${photo.id}" aria-label="대표">대표</button>
-        <button type="button" data-photo-action="delete" data-photo-id="${photo.id}" aria-label="삭제">×</button>
-        <button type="button" data-photo-action="right" data-photo-id="${photo.id}" aria-label="오른쪽으로">›</button>
-      </div>
+      <img src="${photo.url}" alt="추억 사진 ${index + 1}" draggable="false" />
+      ${index === 0 ? `<span class="cover-label">대표</span>` : ""}
+      <button class="photo-delete-button" type="button" data-photo-delete="${photo.id}" aria-label="삭제">×</button>
     </div>
   `).join("");
 
@@ -470,8 +465,8 @@ function bindScreen() {
     document.querySelector("#photo-input").click();
   });
   document.querySelector("#photo-input")?.addEventListener("change", handlePhotoInput);
-  document.querySelectorAll("[data-photo-action]").forEach((button) => {
-    button.addEventListener("click", () => handlePhotoAction(button.dataset.photoAction, button.dataset.photoId));
+  document.querySelectorAll("[data-photo-delete]").forEach((button) => {
+    button.addEventListener("click", () => deletePhoto(button.dataset.photoDelete));
   });
 
   document.querySelector("#delete-memory")?.addEventListener("click", confirmDeleteMemory);
@@ -541,9 +536,7 @@ function handleMemorySubmit(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
   const now = new Date().toISOString();
-  const photos = view.formPhotos.map((photo, index) => ({ ...photo, order: index + 1 }));
-
-  if (!photos.some((photo) => photo.isCover) && photos[0]) photos[0].isCover = true;
+  const photos = normalizePhotos(view.formPhotos);
 
   const payload = {
     title: String(data.get("title")).trim(),
@@ -592,34 +585,27 @@ function handlePhotoInput(event) {
         order: view.formPhotos.length + 1,
         isCover: view.formPhotos.length === 0,
       });
+      view.formPhotos = normalizePhotos(view.formPhotos);
+      syncFormDraftPhotos();
       render();
     };
     reader.readAsDataURL(file);
   });
 }
 
-function handlePhotoAction(action, photoId) {
+function deletePhoto(photoId) {
   collectFormDraft();
   const index = view.formPhotos.findIndex((photo) => photo.id === photoId);
   if (index < 0) return;
 
-  if (action === "delete") {
-    const wasCover = view.formPhotos[index].isCover;
-    view.formPhotos.splice(index, 1);
-    if (wasCover && view.formPhotos[0]) view.formPhotos[0].isCover = true;
-  }
-  if (action === "cover") {
-    view.formPhotos.forEach((photo) => {
-      photo.isCover = photo.id === photoId;
-    });
-  }
-  if (action === "left" && index > 0) {
-    [view.formPhotos[index - 1], view.formPhotos[index]] = [view.formPhotos[index], view.formPhotos[index - 1]];
-  }
-  if (action === "right" && index < view.formPhotos.length - 1) {
-    [view.formPhotos[index + 1], view.formPhotos[index]] = [view.formPhotos[index], view.formPhotos[index + 1]];
-  }
+  view.formPhotos.splice(index, 1);
+  view.formPhotos = normalizePhotos(view.formPhotos);
+  syncFormDraftPhotos();
   render();
+}
+
+function syncFormDraftPhotos() {
+  if (view.formDraft) view.formDraft.photos = view.formPhotos;
 }
 
 function confirmDeleteMemory() {
@@ -908,7 +894,7 @@ function seedMemoriesIfEmpty(me, partner, startDate) {
 }
 
 function coverPhoto(memory) {
-  return orderedPhotos(memory.photos).find((photo) => photo.isCover) || orderedPhotos(memory.photos)[0];
+  return orderedPhotos(memory.photos)[0];
 }
 
 function orderedPhotos(photos = []) {
@@ -916,7 +902,15 @@ function orderedPhotos(photos = []) {
 }
 
 function clonePhotos(photos = []) {
-  return orderedPhotos(photos).map((photo) => ({ ...photo }));
+  return normalizePhotos(photos);
+}
+
+function normalizePhotos(photos = []) {
+  return orderedPhotos(photos).map((photo, index) => ({
+    ...photo,
+    order: index + 1,
+    isCover: index === 0,
+  }));
 }
 
 function parseDate(dateKey) {

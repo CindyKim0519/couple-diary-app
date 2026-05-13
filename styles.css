@@ -584,26 +584,23 @@ button {
   width: 100%;
 }
 
-.photo-tools {
-  background: rgba(38, 58, 44, 0.58);
-  bottom: 0;
-  display: flex;
-  gap: 2px;
-  left: 0;
-  padding: 2px;
-  position: absolute;
-  right: 0;
-}
-
-.photo-tools button {
-  background: transparent;
-  border: 0;
+.photo-delete-button {
+  align-items: center;
+  background: rgba(38, 58, 44, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: var(--radius-pill);
   color: var(--color-white);
   cursor: pointer;
-  flex: 1;
-  font-size: 11px;
+  display: inline-flex;
+  font-size: 16px;
   font-weight: 800;
-  padding: 2px;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 24px;
 }
 
 .cover-label {
