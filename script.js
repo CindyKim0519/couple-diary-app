@@ -396,6 +396,7 @@ function detailScreen() {
     return mainScreen();
   }
   const cover = coverPhoto(memory);
+  const coverUrl = renderPhotoUrl(cover);
   const canEdit = memory.authorNickname === view.currentUser;
   const metaText = detailMetaText(memory);
 
@@ -407,7 +408,7 @@ function detailScreen() {
         <span></span>
       </div>
       <article class="section-panel">
-        ${cover ? `<div class="detail-photo" id="open-gallery"><img src="${cover.url}" alt="${escapeAttr(memory.title)}" /></div>` : ""}
+        ${coverUrl ? `<div class="detail-photo" id="open-gallery"><img src="${coverUrl}" alt="${escapeAttr(memory.title)}" /></div>` : ""}
         <h2 class="detail-title">${escapeHtml(memory.title)}</h2>
         <p class="helper-text">${escapeHtml(memory.authorNickname)}가 남긴 기록</p>
         <p class="meta-text">${escapeHtml(metaText)}</p>
@@ -428,7 +429,7 @@ function galleryScreen() {
         <h1>${memory ? escapeHtml(memory.title) : "사진"}</h1>
         <span></span>
       </div>
-      ${photos.map((photo, index) => `<img src="${photo.url}" alt="사진 ${index + 1}" />`).join("")}
+      ${photos.map((photo, index) => `<img src="${renderPhotoUrl(photo)}" alt="사진 ${index + 1}" />`).join("")}
     </section>
   `;
 }
@@ -808,6 +809,7 @@ function handleMemorySubmit(event) {
 function handlePhotoInput(event) {
   collectFormDraft();
   const files = Array.from(event.target.files).slice(0, Math.max(0, 10 - view.formPhotos.length));
+  console.log("selected files", files.map((file) => file.name));
   files.forEach((file) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1105,10 +1107,11 @@ function resetCollectionVisibleCount() {
 
 function memoryCard(memory) {
   const cover = coverPhoto(memory);
+  const coverUrl = renderPhotoUrl(cover);
   const badge = userBadge(memory.authorNickname);
   return `
     <article class="memory-card" data-memory-id="${memory.id}">
-      <div class="memory-cover">${cover ? `<img src="${cover.url}" alt="${escapeAttr(memory.title)}" />` : "기록"}</div>
+      <div class="memory-cover">${coverUrl ? `<img src="${coverUrl}" alt="${escapeAttr(memory.title)}" />` : "기록"}</div>
       <div class="memory-copy">
         <div class="memory-card-head">
           <h3>${escapeHtml(memory.title)}</h3>
@@ -1188,18 +1191,22 @@ function isFirestorePhotoUrl(url) {
 }
 
 async function uploadMemoryPhotos(memoryId, photos = []) {
+  const user = await ensureAuthenticatedUser();
+  console.log("current user", user.uid);
   const normalized = normalizePhotos(photos);
   const uploaded = [];
 
   for (const photo of normalized) {
     if (photo.file) {
       const fileName = safeStorageName(photo.fileName || photo.file.name || "photo");
-      const path = `couple-space/${COUPLE_SPACE_ID}/memories/${memoryId}/${photo.id}-${fileName}`;
+      const path = `couples/${COUPLE_ID}/memories/${memoryId}/${Date.now()}-${fileName}`;
+      console.log("upload start", path);
       const photoRef = ref(storage, path);
       await uploadBytes(photoRef, photo.file);
       const url = await getDownloadURL(photoRef);
-      console.log("successful photo upload");
-      uploaded.push(storedPhotoPayload({ ...photo, url, storagePath: path }));
+      console.log("upload success", path);
+      console.log("downloadURL", url);
+      uploaded.push(storedPhotoPayload({ ...photo, url, path }));
     } else {
       uploaded.push(storedPhotoPayload(photo));
     }
@@ -1233,7 +1240,7 @@ function sanitizeMemory(memory) {
     type: memory.type || "",
     emotion: memory.emotion || "",
     content: memory.content || "",
-    photos: firestorePhotos(memory.photos),
+    photos: firestorePhotos(memory.photos).map(storedPhotoPayload),
     authorNickname: memory.authorNickname || "",
     createdAt: memory.createdAt || new Date().toISOString(),
     updatedAt: memory.updatedAt || new Date().toISOString(),
@@ -1253,9 +1260,22 @@ function sanitizeAnniversary(anniversary) {
 function storedPhotoPayload(photo) {
   return {
     url: photo.url,
+    path: photo.path || photo.storagePath || "",
     order: photo.order,
     isCover: photo.isCover,
   };
+}
+
+async function ensureAuthenticatedUser() {
+  if (auth.currentUser) return auth.currentUser;
+  const credential = await signInAnonymously(auth);
+  return credential.user;
+}
+
+function renderPhotoUrl(photo) {
+  if (!photo?.url) return "";
+  console.log("render photo URL", photo.url);
+  return photo.url;
 }
 
 function renderRealtimeUpdate() {
@@ -1273,7 +1293,7 @@ function logFirestoreSaveSuccess() {
 }
 
 function logMemorySaveSuccess() {
-  console.log("Firestore memory saved");
+  console.log("Firestore saved memory with photos");
   clearSyncError();
 }
 
