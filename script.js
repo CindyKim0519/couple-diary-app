@@ -742,12 +742,20 @@ function calendarCellMarkup(cell) {
   const isSelected = cell.date === view.selectedDate;
   const isToday = cell.date === toDateKey(new Date());
   const day = parseDate(cell.date).getDate();
+  const marks = calendarDateMarks(memoryCount, hasAnniversary);
   return `
     <button class="calendar-cell ${cell.muted ? "is-muted" : ""} ${isSelected ? "is-selected" : ""} ${isToday ? "is-today" : ""}" data-date="${cell.date}">
       <span class="date-number">${day}</span>
-      <span class="date-marks">${memoryCount ? `<span>${memoryCount}</span>` : ""}${hasAnniversary ? `<span class="heart-mark">♥</span>` : ""}</span>
+      <span class="date-marks">${marks}</span>
     </button>
   `;
+}
+
+function calendarDateMarks(memoryCount, hasAnniversary) {
+  return [
+    memoryCount ? `<span class="memory-count-mark">${memoryCount}</span>` : "",
+    hasAnniversary ? `<span class="heart-mark">♥</span>` : "",
+  ].join("");
 }
 
 function anniversariesForDate(dateKey) {

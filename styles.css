@@ -336,8 +336,27 @@ button {
   min-height: 14px;
 }
 
+.memory-count-mark {
+  align-items: center;
+  background: var(--accent-primary);
+  border-radius: var(--radius-pill);
+  color: var(--color-white);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  height: 16px;
+  justify-content: center;
+  min-width: 16px;
+  padding: 0 5px;
+}
+
 .heart-mark {
   color: var(--accent-warm);
+}
+
+.calendar-cell.is-selected .memory-count-mark {
+  background: var(--color-white);
+  color: var(--accent-primary);
 }
 
 .calendar-cell.is-selected .heart-mark {
