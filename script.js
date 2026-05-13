@@ -1,5 +1,43 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  setDoc,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadBytes,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
+
 const STORAGE_KEY = "coupleDiaryAppState.v1";
 const COLLECTION_PAGE_SIZE = 5;
+const COUPLE_SPACE_ID = "shared";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC3M54V8_bUX48UNHKqSIQEscIsIaQRWMM",
+  authDomain: "couple-diary-app-dc94f.firebaseapp.com",
+  projectId: "couple-diary-app-dc94f",
+  storageBucket: "couple-diary-app-dc94f.firebasestorage.app",
+  messagingSenderId: "345700988806",
+  appId: "1:345700988806:web:f09b669b3dbc8acb265e07",
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+const storage = getStorage(firebaseApp);
 
 const memoryTypes = ["데이트", "여행", "기념일", "맛집", "선물", "일상", "사진", "편지", "싸움/화해", "특별한 날"];
 const emotions = ["행복", "설렘", "고마움", "감동", "편안함", "그리움", "웃김", "미안함", "서운함", "화해"];
@@ -7,9 +45,9 @@ const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
 const app = document.querySelector("#app");
 
-const state = loadState();
+let state = loadState();
 let view = {
-  screen: needsSetup() ? "setup" : "pin",
+  screen: "loading",
   activeTab: "calendar",
   currentUser: state.currentUser || "",
   selectedDate: toDateKey(new Date()),
@@ -22,9 +60,12 @@ let view = {
   collectionVisibleCount: COLLECTION_PAGE_SIZE,
   formPhotos: [],
   formDraft: null,
+  authMode: "login",
+  authError: "",
 };
 
 render();
+initializeAuthState();
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -59,6 +100,8 @@ function render() {
 }
 
 function screenMarkup() {
+  if (view.screen === "loading") return loadingScreen();
+  if (view.screen === "auth") return authScreen();
   if (view.screen === "setup") return setupScreen();
   if (view.screen === "pin") return pinScreen();
   if (view.screen === "user") return userSelectScreen();
@@ -66,6 +109,44 @@ function screenMarkup() {
   if (view.screen === "detail") return detailScreen();
   if (view.screen === "gallery") return galleryScreen();
   return mainScreen();
+}
+
+function loadingScreen() {
+  return `
+    <section class="screen screen-soft">
+      <div class="brand-block">
+        <div class="brand-mark">♡</div>
+        <h1 class="brand-title">우리의 추억</h1>
+        <p class="brand-subtitle">둘만의 공간을 불러오는 중이에요</p>
+      </div>
+    </section>
+  `;
+}
+
+function authScreen() {
+  const isSignup = view.authMode === "signup";
+  return `
+    <section class="screen screen-soft">
+      <div class="brand-block">
+        <div class="brand-mark">♡</div>
+        <h1 class="brand-title">우리의 추억</h1>
+        <p class="brand-subtitle">${isSignup ? "둘만의 계정을 처음 만들어요" : "이메일로 먼저 들어와 주세요"}</p>
+      </div>
+      <form class="form-stack" id="auth-form">
+        <div class="field-group">
+          <label for="auth-email">이메일</label>
+          <input class="ds-field" id="auth-email" name="email" type="email" autocomplete="email" required />
+        </div>
+        <div class="field-group">
+          <label for="auth-password">비밀번호</label>
+          <input class="ds-field" id="auth-password" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" minlength="6" required />
+        </div>
+        <p class="error-text" id="auth-error">${escapeHtml(view.authError)}</p>
+        <button class="ds-button-primary" type="submit">${isSignup ? "회원가입" : "로그인"}</button>
+        <button class="ds-button-secondary" type="button" id="auth-mode-toggle">${isSignup ? "이미 계정이 있어요" : "처음이라면 회원가입"}</button>
+      </form>
+    </section>
+  `;
 }
 
 function setupScreen() {
@@ -401,6 +482,15 @@ function photoManagerMarkup() {
 }
 
 function bindScreen() {
+  const authForm = document.querySelector("#auth-form");
+  if (authForm) authForm.addEventListener("submit", handleAuthSubmit);
+
+  document.querySelector("#auth-mode-toggle")?.addEventListener("click", () => {
+    view.authMode = view.authMode === "login" ? "signup" : "login";
+    view.authError = "";
+    render();
+  });
+
   const setupForm = document.querySelector("#setup-form");
   if (setupForm) setupForm.addEventListener("submit", handleSetup);
 
@@ -543,7 +633,94 @@ function renderCollectionResults() {
   bindLoadMoreButton();
 }
 
-function handleSetup(event) {
+function initializeAuthState() {
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      state = loadState();
+      view = {
+        ...view,
+        screen: "auth",
+        currentUser: "",
+        authError: "",
+      };
+      render();
+      return;
+    }
+
+    try {
+      await loadRemoteState();
+      view.currentUser = state.currentUser || "";
+      view.screen = needsSetup() ? "setup" : "pin";
+      view.authError = "";
+    } catch (error) {
+      view.screen = "auth";
+      view.authError = firebaseErrorMessage(error);
+    }
+    render();
+  });
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const email = String(data.get("email")).trim();
+  const password = String(data.get("password"));
+  view.authError = "";
+
+  try {
+    if (view.authMode === "signup") {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+    }
+  } catch (error) {
+    view.authError = firebaseErrorMessage(error);
+    render();
+  }
+}
+
+async function loadRemoteState() {
+  const cachedCurrentUser = loadState().currentUser || "";
+  const settingsSnap = await getDoc(doc(db, "settings", COUPLE_SPACE_ID));
+  const memoriesSnap = await getDocs(collection(db, "memories"));
+  const anniversariesSnap = await getDocs(collection(db, "anniversaries"));
+  const settings = settingsSnap.exists() ? settingsSnap.data() : null;
+  const users = settings?.users || [];
+  const currentUser = users.some((user) => user.nickname === cachedCurrentUser) ? cachedCurrentUser : "";
+
+  state = {
+    settings,
+    currentUser,
+    memories: memoriesSnap.docs.map((item) => ({ id: item.id, ...item.data() })),
+    anniversaries: anniversariesSnap.docs.map((item) => ({ id: item.id, ...item.data() })),
+  };
+
+  state.memories = state.memories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  state.anniversaries = state.anniversaries.sort((a, b) => new Date(a.date) - new Date(b.date));
+  saveState();
+}
+
+async function saveSettingsToFirestore() {
+  await setDoc(doc(db, "settings", COUPLE_SPACE_ID), state.settings);
+}
+
+async function saveMemoryToFirestore(memory) {
+  await setDoc(doc(db, "memories", memory.id), sanitizeMemory(memory));
+}
+
+async function deleteMemoryFromFirestore(memoryId) {
+  await deleteDoc(doc(db, "memories", memoryId));
+}
+
+async function saveAnniversaryToFirestore(anniversary) {
+  await setDoc(doc(db, "anniversaries", anniversary.id), sanitizeAnniversary(anniversary));
+}
+
+async function deleteAnniversaryFromFirestore(anniversaryId) {
+  await deleteDoc(doc(db, "anniversaries", anniversaryId));
+}
+
+async function handleSetup(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
   const pin = onlyDigits(data.get("pin"));
@@ -569,9 +746,9 @@ function handleSetup(event) {
     ],
     relationshipStartDate: data.get("startDate"),
   };
-  seedMemoriesIfEmpty(me, partner, data.get("startDate"));
   view.currentUser = me;
   view.screen = "main";
+  await saveSettingsToFirestore();
   saveState();
   render();
 }
@@ -587,11 +764,12 @@ function handlePin(event) {
   render();
 }
 
-function handleMemorySubmit(event) {
+async function handleMemorySubmit(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
   const now = new Date().toISOString();
-  const photos = normalizePhotos(view.formPhotos);
+  const memoryId = view.editingMemoryId || makeId("memory");
+  const photos = await uploadMemoryPhotos(memoryId, view.formPhotos);
 
   const payload = {
     title: String(data.get("title")).trim(),
@@ -609,14 +787,16 @@ function handleMemorySubmit(event) {
     const index = state.memories.findIndex((memory) => memory.id === view.editingMemoryId);
     state.memories[index] = { ...state.memories[index], ...payload };
     view.viewingMemoryId = view.editingMemoryId;
+    await saveMemoryToFirestore(state.memories[index]);
   } else {
     const memory = {
-      id: makeId("memory"),
+      id: memoryId,
       ...payload,
       createdAt: now,
     };
     state.memories.unshift(memory);
     view.viewingMemoryId = memory.id;
+    await saveMemoryToFirestore(memory);
   }
 
   view.selectedDate = payload.date;
@@ -637,6 +817,9 @@ function handlePhotoInput(event) {
       view.formPhotos.push({
         id: makeId("photo"),
         url: reader.result,
+        file,
+        fileName: file.name,
+        storagePath: "",
         order: view.formPhotos.length + 1,
         isCover: view.formPhotos.length === 0,
       });
@@ -673,8 +856,9 @@ function confirmDeleteMemory() {
     </div>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
-  document.querySelector("#dialog-delete").addEventListener("click", () => {
+  document.querySelector("#dialog-delete").addEventListener("click", async () => {
     state.memories = state.memories.filter((memory) => memory.id !== view.editingMemoryId);
+    await deleteMemoryFromFirestore(view.editingMemoryId);
     closeDialog();
     view.screen = "main";
     view.activeTab = "calendar";
@@ -724,7 +908,7 @@ function openAnniversaryDialog(id = null) {
     </form>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
-  document.querySelector("#anniversary-form").addEventListener("submit", (event) => {
+  document.querySelector("#anniversary-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const payload = {
@@ -732,11 +916,14 @@ function openAnniversaryDialog(id = null) {
       date: data.get("date"),
       memo: String(data.get("memo")).trim(),
     };
+    let savedAnniversary = item;
     if (item) {
       Object.assign(item, payload);
     } else {
-      state.anniversaries.push({ id: makeId("anniversary"), ...payload, createdAt: new Date().toISOString() });
+      savedAnniversary = { id: makeId("anniversary"), ...payload, createdAt: new Date().toISOString() };
+      state.anniversaries.push(savedAnniversary);
     }
+    await saveAnniversaryToFirestore(savedAnniversary);
     view.selectedDate = payload.date;
     view.viewedMonth = monthKey(parseDate(payload.date));
     closeDialog();
@@ -780,9 +967,10 @@ function confirmDeleteAnniversary(id) {
     </div>
   `);
   document.querySelector("#dialog-cancel").addEventListener("click", closeDialog);
-  document.querySelector("#dialog-delete").addEventListener("click", () => {
+  document.querySelector("#dialog-delete").addEventListener("click", async () => {
     closeDialog();
     deleteAnniversary(id);
+    await deleteAnniversaryFromFirestore(id);
     saveState();
     render();
   });
@@ -966,39 +1154,6 @@ function diffDaysInclusive(start, end) {
   return Math.floor((endUtc - startUtc) / 86400000) + 1;
 }
 
-function seedMemoriesIfEmpty(me, partner, startDate) {
-  if (state.memories.length) return;
-  const now = new Date().toISOString();
-  state.memories = [
-    {
-      id: makeId("memory"),
-      title: "처음 남긴 작은 기록",
-      date: startDate,
-      place: "",
-      type: "일상",
-      emotion: "설렘",
-      content: "우리의 첫 페이지를 열어둔 날.",
-      photos: [],
-      authorNickname: me,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: makeId("memory"),
-      title: "같이 걷던 저녁",
-      date: startDate,
-      place: "동네 산책길",
-      type: "데이트",
-      emotion: "편안함",
-      content: "별일 없어도 같이 걸어서 좋았던 시간.",
-      photos: [],
-      authorNickname: partner,
-      createdAt: new Date(Date.now() - 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 1000).toISOString(),
-    },
-  ];
-}
-
 function coverPhoto(memory) {
   return orderedPhotos(memory.photos)[0];
 }
@@ -1017,6 +1172,84 @@ function normalizePhotos(photos = []) {
     order: index + 1,
     isCover: index === 0,
   }));
+}
+
+async function uploadMemoryPhotos(memoryId, photos = []) {
+  const normalized = normalizePhotos(photos);
+  const uploaded = [];
+
+  for (const photo of normalized) {
+    if (photo.file) {
+      const fileName = safeStorageName(photo.fileName || photo.file.name || "photo");
+      const path = `couple-space/${COUPLE_SPACE_ID}/memories/${memoryId}/${photo.id}-${fileName}`;
+      const photoRef = ref(storage, path);
+      await uploadBytes(photoRef, photo.file);
+      const url = await getDownloadURL(photoRef);
+      uploaded.push({
+        id: photo.id,
+        url,
+        storagePath: path,
+        order: photo.order,
+        isCover: photo.isCover,
+      });
+    } else {
+      uploaded.push({
+        id: photo.id,
+        url: photo.url,
+        storagePath: photo.storagePath || "",
+        order: photo.order,
+        isCover: photo.isCover,
+      });
+    }
+  }
+
+  return normalizePhotos(uploaded);
+}
+
+function sanitizeMemory(memory) {
+  return {
+    title: memory.title || "",
+    date: memory.date || "",
+    place: memory.place || "",
+    type: memory.type || "",
+    emotion: memory.emotion || "",
+    content: memory.content || "",
+    photos: normalizePhotos(memory.photos).map((photo) => ({
+      id: photo.id,
+      url: photo.url,
+      storagePath: photo.storagePath || "",
+      order: photo.order,
+      isCover: photo.isCover,
+    })),
+    authorNickname: memory.authorNickname || "",
+    createdAt: memory.createdAt || new Date().toISOString(),
+    updatedAt: memory.updatedAt || new Date().toISOString(),
+  };
+}
+
+function sanitizeAnniversary(anniversary) {
+  return {
+    title: anniversary.title || "",
+    date: anniversary.date || "",
+    memo: anniversary.memo || "",
+    createdAt: anniversary.createdAt || new Date().toISOString(),
+  };
+}
+
+function safeStorageName(value) {
+  return String(value).replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function firebaseErrorMessage(error) {
+  const code = error?.code || "";
+  if (code.includes("email-already-in-use")) return "이미 가입된 이메일이에요";
+  if (code.includes("invalid-email")) return "이메일 형식을 확인해 주세요";
+  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+    return "이메일 또는 비밀번호가 맞지 않아요";
+  }
+  if (code.includes("weak-password")) return "비밀번호는 6자리 이상으로 입력해 주세요";
+  if (code.includes("permission-denied")) return "로그인한 사용자만 사용할 수 있어요";
+  return "잠시 후 다시 시도해 주세요";
 }
 
 function parseDate(dateKey) {
