@@ -177,9 +177,9 @@ function calendarView() {
   return `
     <section class="calendar-panel">
       <div class="month-nav">
-        <button class="icon-button" id="prev-month" aria-label="이전 달">‹</button>
+        ${iconButton("prev-month", "이전 달", "‹")}
         <h2 class="month-title">${year}년 ${month}월</h2>
-        <button class="icon-button" id="next-month" aria-label="다음 달">›</button>
+        ${iconButton("next-month", "다음 달", "›")}
       </div>
       <div class="calendar-weekdays">${weekdays.map((day) => `<span>${day}</span>`).join("")}</div>
       <div class="calendar-grid">${cells}</div>
@@ -279,7 +279,7 @@ function memoryFormScreen() {
   return `
     <section class="screen screen-soft screen-scroll">
       <div class="topbar">
-        <button class="icon-button" id="back-main" aria-label="뒤로">‹</button>
+        ${iconButton("back-main", "뒤로", "‹")}
         <h1>${memory ? "추억 수정하기" : "추억 추가"}</h1>
         <span></span>
       </div>
@@ -342,7 +342,7 @@ function detailScreen() {
   return `
     <section class="screen screen-soft screen-scroll">
       <div class="topbar">
-        <button class="icon-button" id="back-main" aria-label="뒤로">‹</button>
+        ${iconButton("back-main", "뒤로", "‹")}
         <h1>추억 보기</h1>
         <span></span>
       </div>
@@ -371,6 +371,10 @@ function galleryScreen() {
       ${photos.map((photo, index) => `<img src="${photo.url}" alt="사진 ${index + 1}" />`).join("")}
     </section>
   `;
+}
+
+function iconButton(id, label, symbol) {
+  return `<button class="icon-button" id="${id}" aria-label="${label}"><span>${symbol}</span></button>`;
 }
 
 function photoManagerMarkup() {

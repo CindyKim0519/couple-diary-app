@@ -177,6 +177,15 @@ button {
   width: 42px;
 }
 
+.icon-button span {
+  align-items: center;
+  display: flex;
+  height: 1em;
+  justify-content: center;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
 .topbar {
   align-items: center;
   display: flex;
